@@ -2,4 +2,5 @@
 
 ## 자바 ORM 표준 JPA 프로그래밍
 
-CH01  [JPA소개](/Ch01/JPABook_CH01.md)
+Ch 01  [JPA 소개](/Ch01/JPABook_CH01.md)  
+Ch 02  [JPA 시작](/Ch02/JPABook_CH02.md)  
