@@ -56,7 +56,7 @@
 
 ## 1.3 JPA란?
 - JPA(Java Persitance API) : 자바진영의 ORM 표준기술, API 표준명세
-- 애플리케이션과 JDBC사이에서 동작
+- 애플리케이션과 JDBC사이에서 동작  
 ![ex_screenshot](/img/jpa.jpg)  
 - ORM(Object Relational Mapping) : 객체-관계형 데이터베이스를 맵핑
 - ORM 프레임워크는 객체와 테이블을 맵핑해서 패러다임의 불일치 문제를 개발자 대신 해결
