@@ -112,11 +112,174 @@
     - 트랜젝션을 커밋할때 모아둔 쿼리문을 DB에 보냄 : 트랜젝션을 지원하는 쓰기 지연(transaction write-behind)
     - 영속성 컨텍스트의 변경내용을 DB에 동기화한 후 실제 DB에 트랜젝션을 커밋
     - 쿼리를 그때그때마다 DB에 보내도 트랜젝션을 커밋하지 않으면 아무소용이 없음, 즉 어떻게든 커밋직전에 DB에 쿼리문을 보내면됨
-    -<b style="color:red;"> 이를 잘 활용해 모아둔 쿼리문을 DB에 한번에 전달해서 성능을 최적화 할수 있음</b>
+    - <b style="color:red;"> 이를 잘 활용해 모아둔 쿼리문을 DB에 한번에 전달해서 성능을 최적화 할수 있음</b>
 
     3. 엔티티 수정
-    
+    - 수정 SQL문의 문제점
+        - SQL문을 사용하여 직접 수정쿼리문을 작성할때, 요구사항이 늘어날때마다 수정 쿼리문이 추가될수 있음
+        - 기존에 이름, 나이를 변경하는 쿼리문이 있는데, 회원등급을 변견하는 쿼리문을 추가할때
+        - 기존 쿼리문에 합쳐서 수정하거나, 아니면 2개의 수정쿼리문을 작성
+        - 즉, 수정쿼리문이 많아지며 비지니스 로직을 분석하기위해 SQL문을 계속 확인 -> SQL에 의존적이게 됨
+    - 변경감지
+        ```java
+            public class JPAmain {
+                public static void main(String[] args) {
+                    EntityManagerFactory emf = Persistence.createEntityManagerFactory("jpabook");
+                    EntityManager em = emf.createEntityManager();
+                    EntityTransaction transaction = em.getTransaction();
 
+                    //
+                    try {
+                        transaction.begin();    // 트랜젝션 시작
+                        logic(em);              // 비지니스 로직을 실행하는 메서드
+                        transaction.commit();   // 커밋(트랜젝션) - 비지니스 로직이 정상작동시
+                    } catch (Exception e) {
+                        transaction.rollback(); // 롤백(트랜젝션) - 비지니스 로직에서 예외가 발생할때
+                    } finally {
+                        em.close(); // 사용을 마치면 엔티티 매니져 종료
+                    }
+                    emf.close();    // 사용을 마치면 엔티티매니져팩토리 종료
+
+                }
+
+                private static void logic(EntityManager em) {
+                    String id = "memberA";
+                    Member member = new Member();
+
+                    member.setId(id);
+                    member.setUserName("hi");
+                    member.setAge(10);
+
+                    em.persist(member); // 엔티티 등록
+
+                    Member memberA = em.find(Member.class, "memberA");	// 영속 엔티티 조회
+                    
+                    // 영속 엔티티 데이터 수정
+                    memberA.setUserName("mykim");
+                    memberA.setAge(50);
+                }
+            }
+        ```
+        - JPA로 엔티티를 수정할때, 단순히 엔티티를 조회해서 데이터만 변경하면 됨, em.update()같은 메서드 X
+        - 엔티티의 변경사항을 자동으로 감지 : <b style="color:red;">변경감지(dirty checking)</b>
+        - 영속성 컨텍스트에 엔티티를 저장할 때 최초상태를 복사해서 저장(스냅샷), 플러시 시점에 스냅샷과 엔티티를 비교하여 변경사항을 찾음
+        - 변경감지는 영속성 컨텍스트가 관리하는 영속상태의 엔티티에만 적용
+        - JPA의 기본전략은 변경된 엔티티만 업데이트 하는것이 아니라 모든 엔티티를 업데이트
+        - 필드가 많거나 저장되는 내용이 너무 크면 수정된 데이터만 사용해서 동적으로 UPDATE SQL을 생성하면 됨
+    
+    4. 엔티티 삭제
+    - 엔티티를 삭제하려면 먼저 대상 엔티티를 조회
+    ```java
+        Member member = new Member();
+
+		member.setId(id);
+		member.setUserName("hi");
+		member.setAge(10);
+
+		em.persist(member); // 엔티티 등록
+
+		Member memberA = em.find(Member.class, "memberA");	// 영속 엔티티 조회
+		
+		em.remove(memberA);
+    ```
+    - 삭제쿼리를 쓰기지연 SQL저장소에 등록, 이후 트랜젝션 commit을 플러시를 호출하면 실제 DB에 삭제쿼리전달
+    - em.remove(memberA);가 호출되면 memberA 엔티티는 영속성 컨텍스트에서 제거
+
+
+## 3.5 플러시
+- 플러시(Flush) : <b style="color:red;">영속성 컨텍스트의 변경내용을 DB에 반영하는 행위(동기화)</b>
+    - 변경감지가 동작해서 영속성 컨텍스트의 모든 엔티티를 스냅샷과 비교해서 변경사항을 찾은다음 수정 SQL를 만들어 지연 SQL저장소에 등록
+    - 쓰기 지연 SQL저장소의 모든 쿼리를 DB에 전송(CRUD)
+
+- 영속성 컨텍스트를 플러쉬하는 방법
+    1. em.flush(); 호출
+    2. 트랜젝션을 commit
+    3. JPQL쿼리 실행(부분조회시 사용)
+          
+## 3.6 준영속
+- 준영속 : 영속성 컨텍스트에서 관리하는 엔티티가 영속성 컨텍스트에서 분리되는 것
+- 준영속 상태의 엔티티는 영속성 컨텍스트가 제공하는 기능사용 X
+- 영속 -> 준영속 만드는 방법  
+    1. em.detach(entity) : 특정 엔티티만 준영속상태로 만듬
+    2. em.clear() : 영속성 컨텍스트를 초기화, 모든 엔티티를 준영속상태로 만드는 것
+    3. em.close() : 영속성 컨텍스트를 종료
+- 준영속 상태의 특징
+    1. 거의 비영속상태
+    2. 식별자 값을 가짐
+    3. 지연로딩을 할 수 없음
+- 병합(merger)
+    - 준영속상태의 엔티티를 다시 영속상태로 만들때 사용
+    ```java
+        public class ExampleMerge {
+            static EntityManagerFactory emf = Persistence.createEntityManagerFactory("jpabook");
+
+            static Member createMember(String id, String username, int age) {
+                // 영속성 컨텍스트 1 시작
+                EntityManager em1 = emf.createEntityManager();
+                EntityTransaction tx1 = em1.getTransaction();
+                tx1.begin();
+
+                Member member = new Member();
+                member.setId(id);
+                member.setUserName(username);
+                member.setAge(age); // 비영속 상태
+
+                em1.persist(member); // 영속성 등록
+
+                tx1.commit();
+
+                em1.close(); // 영속성 컨텍스트1 종료, member엔티티는 준영속 상태
+
+                return member; // 준영속상태의 member엔티티 객체 반환
+                // 영속성 컨텍스트 1 종료
+            }
+
+            static void mergeMember(Member member) {
+                // 영속성 컨텍스트2 시작
+                EntityManager em2 = emf.createEntityManager();
+                EntityTransaction tx2 = em2.getTransaction();
+                tx2.begin();
+                Member mergeMember = em2.merge(member);
+                tx2.commit();
+
+                // 준영속상태 엔티티 member
+                System.out.println("member : " + member.getUserName());
+
+                // 영속상태 엔티티 mergeMember
+                System.out.println("mergeMember : " + mergeMember.getUserName());
+                System.out.println("em2 contains member : " + em2.contains(member));    // 영속성 컨텍스트가 해당 엔티티를  관리하는지 확인하는 메서드
+                System.out.println("em2 contains mergeMember : " + em2.contains(mergeMember));
+
+                em2.close();
+                // 영속성 컨텍스트2 종료
+            }
+
+            public static void main(String[] args) {
+                Member member = createMember("memberA", "영속", 32); // 준영속상태의 엔티티 반환
+
+                member.setUserName("준영속"); // 준영속 상태에서 변경, 이때는 member를 관리하는 영속성 컨텍스트가 없으므로 수정사항을 DB에 반영 불가 
+
+                mergeMember(member);	// merge를 통해 준영속상태의 엔티티를 영속상태의 엔티티로 다시 반환
+            }
+
+        }
+    ```
+    - console창
+    ```
+        member : 준영속
+        mergeMember : 준영속
+        em2 contains member : false
+        em2 contains mergeMember : true
+    ```
+    - DB 반영결과
+    ![ex_screenshot](/img/ch3_dbResult.png)
+
+    - member엔티티(준영속) / mergetMember(영속) 엔티티, 서로 다른 객체
+    - 비영속병합 : 비영속상태의 엔티티도 병합을 통해 영속상태로 만들수 있음
+    - 병합은 준영속, 비영속을 신경쓰지않음
+
+    
+    
 
 
 
